@@ -7,10 +7,15 @@ import (
 
 	"os"
 
-	"github.com/bitly/go-simplejson"
+	"fmt"
+	"io/ioutil"
 	"log"
-	"io"
+
+	"github.com/bitly/go-simplejson"
+	"time"
 )
+
+var blocksize = int64(1024 * 1024)
 
 var app_id = "260149"
 
@@ -47,7 +52,6 @@ func (client *Client) NewRequest(method string, url string, q map[string]string)
 		v.Add(key, value)
 	}
 	req.URL.RawQuery = v.Encode()
-	log.Println(v)
 
 	return
 }
@@ -57,6 +61,11 @@ type baiduFile struct {
 	path string
 	name string
 	size int64
+}
+
+type finish struct {
+	id  int64
+	err error
 }
 
 var pcsFileURL = "https://pcs.baidu.com/rest/2.0/pcs/file"
@@ -84,26 +93,94 @@ func (b *BaiduWangPan) Get(path, name string) (err error) {
 	size := j.Get("list").GetIndex(0).Get("size").MustInt64()
 	log.Printf("%s size: %d", name, size)
 
-	//Download file
-	req, err = b.client.NewRequest("GET", pcsFileURL, map[string]string{
-		"method": "download",
-		"path":   path,
-	})
-	if err != nil {
-		return
-	}
-
-	resp, err = b.client.Do(req)
-	if err != nil {
-		return
-	}
-
 	file, err := os.Create(name)
 	if err != nil {
 		return
 	}
 
-	_, err = io.Copy(file, resp.Body)
+	//Download file
+	taskChan := make(chan int64)
+	finishChan := make(chan finish)
+	go func() {
+		for id := int64(0); id*blocksize < size; id++ {
+			taskChan <- id
+		}
+	}()
+
+	for i := 0; i < 4; i++ {
+		go func() {
+			for id := range taskChan {
+				start := id * blocksize
+				end := start + blocksize - 1
+				if end > size {
+					end = size -1
+				}
+
+				req, err = b.client.NewRequest("GET", pcsFileURL, map[string]string{
+					"method": "download",
+					"path":   path,
+				})
+				if err != nil {
+					finishChan <- finish{
+						id:  id,
+						err: err,
+					}
+					continue
+				}
+
+				req.Header.Add("Range", fmt.Sprintf("bytes=%d-%d", start, end))
+
+				t := time.Now()
+				resp, err = b.client.Do(req)
+				if err != nil {
+					finishChan <- finish{
+						id:  id,
+						err: err,
+					}
+					continue
+				}
+
+				data, err := ioutil.ReadAll(resp.Body)
+				if len(data)==65{
+					log.Println(string(data))
+				}
+
+				if err != nil {
+					finishChan <- finish{
+						id:  id,
+						err: err,
+					}
+					continue
+				}
+
+				log.Printf("Block%d %dbytes %f",id,len(data), time.Since(t).Seconds())
+
+				_, err = file.WriteAt(data, start)
+				if err != nil {
+					finishChan <- finish{
+						id:  id,
+						err: err,
+					}
+					continue
+				}
+
+				finishChan <- finish{
+					id:  id,
+					err: nil,
+				}
+			}
+		}()
+	}
+
+	for finished := int64(0); finished*blocksize < size; {
+		f := <-finishChan
+		if f.err != nil {
+			log.Fatalf("ID%d error: %s", f.id, err.Error())
+			taskChan <- f.id
+		}
+		log.Printf("ID%d finished", f.id)
+		finished++
+	}
 
 	return
 }
