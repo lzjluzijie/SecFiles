@@ -1,18 +1,20 @@
 package baiduwangpan
 
 import (
+	"bytes"
+	"fmt"
+	"io"
+	"io/ioutil"
+	"log"
+	"mime/multipart"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
-
 	"os"
-
-	"fmt"
-	"io/ioutil"
-	"log"
+	"time"
 
 	"github.com/bitly/go-simplejson"
-	"time"
+	"github.com/lzjluzijie/secfiles/core"
 )
 
 var blocksize = int64(1024 * 1024)
@@ -30,30 +32,10 @@ var panURL = &url.URL{
 }
 
 type BaiduWangPan struct {
+	*http.Client
+
 	bduss  string
 	app_id string
-	client Client
-}
-
-type Client struct {
-	*http.Client
-	app_id string
-}
-
-func (client *Client) NewRequest(method string, url string, q map[string]string) (req *http.Request, err error) {
-	req, err = http.NewRequest(method, url, nil)
-	if err != nil {
-		return
-	}
-
-	v := req.URL.Query()
-	v.Add("app_id", client.app_id)
-	for key, value := range q {
-		v.Add(key, value)
-	}
-	req.URL.RawQuery = v.Encode()
-
-	return
 }
 
 type baiduFile struct {
@@ -70,20 +52,69 @@ type finish struct {
 
 var pcsFileURL = "https://pcs.baidu.com/rest/2.0/pcs/file"
 
-func (b *BaiduWangPan) Get(path, name string) (err error) {
-	//Get size
-	req, err := b.client.NewRequest("GET", pcsFileURL, map[string]string{
-		"method": "meta",
-		"path":   path,
-	})
+func (b *BaiduWangPan) Put(f *core.File) (err error) {
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, err := writer.CreateFormFile("file", f.Path)
 	if err != nil {
 		return
 	}
 
-	resp, err := b.client.Do(req)
+	file, err := os.Open(f.Path)
 	if err != nil {
 		return
 	}
+
+	_, err = io.Copy(part, file)
+
+	err = writer.Close()
+	if err != nil {
+		return
+	}
+
+	req, err := http.NewRequest("POST", pcsFileURL, body)
+	if err != nil {
+		return
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	v := req.URL.Query()
+	v.Add("app_id", b.app_id)
+	v.Add("method", "upload")
+	v.Add("path", "/"+f.Name)
+	v.Add("ondup", "newcopy")
+	req.URL.RawQuery = v.Encode()
+
+	resp, err := b.Do(req)
+	if err != nil {
+		return
+	}
+
+	log.Println(resp.Header)
+
+	data, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return
+	}
+
+	log.Println(string(data))
+
+	return
+}
+
+func (b *BaiduWangPan) Get(path, name string) (err error) {
+	//Get size
+	u := fmt.Sprintf("%s?app_id=%s&method=meta&path=%s", pcsFileURL, b.app_id, path)
+	req, err := http.NewRequest("GET", u, nil)
+	if err != nil {
+		return
+	}
+
+	resp, err := b.Do(req)
+	if err != nil {
+		return
+	}
+
+	log.Println(resp)
 
 	j, err := simplejson.NewFromReader(resp.Body)
 	if err != nil {
@@ -107,19 +138,18 @@ func (b *BaiduWangPan) Get(path, name string) (err error) {
 		}
 	}()
 
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 64; i++ {
 		go func() {
 			for id := range taskChan {
 				start := id * blocksize
 				end := start + blocksize - 1
 				if end > size {
-					end = size -1
+					end = size - 1
 				}
 
-				req, err = b.client.NewRequest("GET", pcsFileURL, map[string]string{
-					"method": "download",
-					"path":   path,
-				})
+				u = fmt.Sprintf("%s?app_id=%s&method=download&path=%s", pcsFileURL, b.app_id, path)
+
+				req, err = http.NewRequest("GET", u, nil)
 				if err != nil {
 					finishChan <- finish{
 						id:  id,
@@ -131,7 +161,7 @@ func (b *BaiduWangPan) Get(path, name string) (err error) {
 				req.Header.Add("Range", fmt.Sprintf("bytes=%d-%d", start, end))
 
 				t := time.Now()
-				resp, err = b.client.Do(req)
+				resp, err = b.Do(req)
 				if err != nil {
 					finishChan <- finish{
 						id:  id,
@@ -141,7 +171,7 @@ func (b *BaiduWangPan) Get(path, name string) (err error) {
 				}
 
 				data, err := ioutil.ReadAll(resp.Body)
-				if len(data)==65{
+				if len(data) == 65 {
 					log.Println(string(data))
 				}
 
@@ -153,7 +183,7 @@ func (b *BaiduWangPan) Get(path, name string) (err error) {
 					continue
 				}
 
-				log.Printf("Block%d %dbytes %f",id,len(data), time.Since(t).Seconds())
+				log.Printf("Block%d %dbytes %f", id, len(data), time.Since(t).Seconds())
 
 				_, err = file.WriteAt(data, start)
 				if err != nil {
@@ -204,17 +234,12 @@ func NewBaiduWangPan(bduss string) (b *BaiduWangPan, err error) {
 		cookie,
 	})
 
-	c := Client{
+	b = &BaiduWangPan{
 		Client: &http.Client{
 			Jar: jar,
 		},
 		app_id: app_id,
-	}
-
-	b = &BaiduWangPan{
-		app_id: app_id,
 		bduss:  bduss,
-		client: c,
 	}
 	return
 }

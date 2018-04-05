@@ -5,6 +5,7 @@ import (
 
 	"log"
 
+	"github.com/lzjluzijie/secfiles/core"
 	"github.com/lzjluzijie/secfiles/storage/baiduwangpan"
 	"github.com/urfave/cli"
 )
@@ -19,16 +20,46 @@ func main() {
 	app.Commands = []cli.Command{
 		{
 			Name:    "download",
-			Aliases: []string{"dl"},
+			Aliases: []string{"d"},
 			Usage:   "Just download",
-			Action:  Test,
+			Action:  download,
+		},
+		{
+			Name:    "upload",
+			Aliases: []string{"u"},
+			Usage:   "Just upload",
+			Action:  upload,
 		},
 	}
 
 	app.Run(os.Args)
 }
 
-func Test(ctx *cli.Context) (err error) {
+func upload(ctx *cli.Context) (err error) {
+	bduss := ctx.Args().Get(0)
+	path := ctx.Args().Get(1)
+
+	b, err := baiduwangpan.NewBaiduWangPan(bduss)
+	if err != nil {
+		log.Fatalln(err.Error())
+		return
+	}
+
+	f, err := core.OpenFile(path)
+	if err != nil {
+		log.Fatalln(err.Error())
+		return
+	}
+
+	err = b.Put(f)
+	if err != nil {
+		log.Fatalln(err.Error())
+		return
+	}
+	return
+}
+
+func download(ctx *cli.Context) (err error) {
 	bduss := ctx.Args().Get(0)
 	path := ctx.Args().Get(1)
 	name := ctx.Args().Get(2)
