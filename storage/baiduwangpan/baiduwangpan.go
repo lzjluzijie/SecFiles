@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/bitly/go-simplejson"
-	"github.com/iikira/BaiduPCS-Go/requester/multipartreader"
 	"github.com/lzjluzijie/secfiles/core"
 )
 
@@ -56,9 +55,8 @@ func (b *BaiduWangPan) Put(f *core.File) (err error) {
 		return
 	}
 
-	r := multipartreader.NewFileReadedLen64(file)
-	mr := multipartreader.NewMultipartReader()
-	mr.AddFormFile("file", f.Name, r)
+	mr := core.NewMultipartReader()
+	mr.AddFile(file)
 
 	req, err := http.NewRequest("POST", pcsFileURL, mr)
 	if err != nil {
@@ -77,11 +75,11 @@ func (b *BaiduWangPan) Put(f *core.File) (err error) {
 		for {
 			time.Sleep(time.Second)
 			readed := mr.Readed()
-			if readed == f.Size{
+			if readed == f.Size {
 				return
 			}
 
-			readed = readed/1024
+			readed = readed / 1024
 
 			log.Printf("%s uploaded:%dKB, speed:%dKBps", f.Name, readed, readed/int64(time.Since(t).Seconds()))
 		}
