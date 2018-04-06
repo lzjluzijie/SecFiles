@@ -23,8 +23,6 @@ import (
 
 var blocksize = int64(1024 * 1024)
 
-var app_id = "260149"
-
 var pcsURL = &url.URL{
 	Scheme: "http",
 	Host:   "pcs.baidu.com",
@@ -57,8 +55,8 @@ type finish struct {
 
 var pcsFileURL = "https://pcs.baidu.com/rest/2.0/pcs/file"
 
-func (b *BaiduWangPan) Put(f *core.File) (err error) {
-	file, err := os.Open(f.Path)
+func (b *BaiduWangPan) Put(s *core.Seed) (err error) {
+	file, err := os.Open(s.Path)
 	if err != nil {
 		return
 	}
@@ -82,10 +80,10 @@ func (b *BaiduWangPan) Put(f *core.File) (err error) {
 
 	//Ready to upload
 	mr := core.NewMultipartReader()
-	form := fmt.Sprintf("--%s\r\nContent-Disposition: form-data; name=\"%s\"; filename=\"%s\"\r\n\r\n", mr.Boundary, "file", fmt.Sprintf("%x.sfs", f.Hash))
+	form := fmt.Sprintf("--%s\r\nContent-Disposition: form-data; name=\"%s\"; filename=\"%s\"\r\n\r\n", mr.Boundary, "file", s.B36Hash+".sfs")
 	mr.AddReader(strings.NewReader(form), int64(len(form)))
 	mr.AddReader(bytes.NewReader(iv), 16)
-	mr.AddReader(reader, f.Size)
+	mr.AddReader(reader, s.Size)
 
 	req, err := http.NewRequest("POST", pcsFileURL, mr)
 	if err != nil {
@@ -95,7 +93,7 @@ func (b *BaiduWangPan) Put(f *core.File) (err error) {
 	v := req.URL.Query()
 	v.Add("app_id", b.app_id)
 	v.Add("method", "upload")
-	v.Add("path", "/secfiles/"+fmt.Sprintf("%x.sfs", f.Hash))
+	v.Add("path", "/secfiles/"+s.B36Hash+".sfs")
 	v.Add("ondup", "newcopy")
 	req.URL.RawQuery = v.Encode()
 
@@ -103,14 +101,15 @@ func (b *BaiduWangPan) Put(f *core.File) (err error) {
 		t := time.Now()
 		for {
 			time.Sleep(time.Second)
+
 			readed := mr.Readed()
-			if readed == f.Size {
+			if readed >= s.Size {
 				return
 			}
 
 			readed = readed / 1024
 
-			log.Printf("%s uploaded:%dKB, speed:%dKBps", f.Name, readed, readed/int64(time.Since(t).Seconds()))
+			log.Printf("%s uploaded:%dKB, speed:%dKBps", s.Name, readed, readed/int64(time.Since(t).Seconds()))
 		}
 	}()
 
@@ -119,6 +118,7 @@ func (b *BaiduWangPan) Put(f *core.File) (err error) {
 		return
 	}
 
+	log.Println(resp.StatusCode)
 	log.Println(resp.Header)
 
 	data, err := ioutil.ReadAll(resp.Body)
@@ -131,30 +131,15 @@ func (b *BaiduWangPan) Put(f *core.File) (err error) {
 	return
 }
 
-func (b *BaiduWangPan) Get(f *core.File) (err error) {
-	path := fmt.Sprintf("/secfiles/%x.sfs", f.Hash)
-	name := fmt.Sprintf("%x.sfs", f.Hash)
+func (b *BaiduWangPan) Get(s *core.Seed) (err error) {
+	path := "/secfiles/" + s.B36Hash + ".sfs"
+	name := s.B36Hash + ".sfs"
 
 	//Get size
-	u := fmt.Sprintf("%s?app_id=%s&method=meta&path=%s", pcsFileURL, b.app_id, path)
-	req, err := http.NewRequest("GET", u, nil)
-	if err != nil {
-		return
+	size, err := b.GetSize(path)
+	if err!=nil{
+		return err
 	}
-
-	resp, err := b.Do(req)
-	if err != nil {
-		return
-	}
-
-	log.Println(resp)
-
-	j, err := simplejson.NewFromReader(resp.Body)
-	if err != nil {
-		return
-	}
-
-	size := j.Get("list").GetIndex(0).Get("size").MustInt64()
 	log.Printf("%s size: %d", name, size)
 
 	file, err := os.Create(name)
@@ -180,9 +165,9 @@ func (b *BaiduWangPan) Get(f *core.File) (err error) {
 					end = size - 1
 				}
 
-				u = fmt.Sprintf("%s?app_id=%s&method=download&path=%s", pcsFileURL, b.app_id, path)
+				u := fmt.Sprintf("%s?app_id=%s&method=download&path=%s", pcsFileURL, b.app_id, path)
 
-				req, err = http.NewRequest("GET", u, nil)
+				req, err := http.NewRequest("GET", u, nil)
 				if err != nil {
 					finishChan <- finish{
 						id:  id,
@@ -194,7 +179,7 @@ func (b *BaiduWangPan) Get(f *core.File) (err error) {
 				req.Header.Add("Range", fmt.Sprintf("bytes=%d-%d", start, end))
 
 				t := time.Now()
-				resp, err = b.Do(req)
+				resp, err := b.Do(req)
 				if err != nil {
 					finishChan <- finish{
 						id:  id,
@@ -245,8 +230,31 @@ func (b *BaiduWangPan) Get(f *core.File) (err error) {
 
 	//Download finished, start decrypt
 	log.Printf("Download %s finished, begin to decrypt", name)
-	b.Decrypt(name, f.Name)
+	b.Decrypt(name, s.Name)
 	log.Println("Finish")
+	return
+}
+
+func (b *BaiduWangPan) GetSize(path string)(size int64, err error){
+	u := fmt.Sprintf("%s?app_id=%s&method=meta&path=%s", pcsFileURL, b.app_id, path)
+	req, err := http.NewRequest("GET", u, nil)
+	if err != nil {
+		return
+	}
+
+	resp, err := b.Do(req)
+	if err != nil {
+		return
+	}
+
+	log.Println(resp)
+
+	j, err := simplejson.NewFromReader(resp.Body)
+	if err != nil {
+		return
+	}
+
+	size = j.Get("list").GetIndex(0).Get("size").MustInt64()
 	return
 }
 
@@ -294,7 +302,7 @@ func (b *BaiduWangPan) Decrypt(in, out string) (err error) {
 	return
 }
 
-func NewBaiduWangPan(bduss string, key []byte) (b *BaiduWangPan, err error) {
+func NewBaiduWangPan(bduss, app_id string, key []byte) (b *BaiduWangPan, err error) {
 	cookie := &http.Cookie{
 		Name:  "BDUSS",
 		Value: bduss,

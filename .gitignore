@@ -1,4 +1,3 @@
 .idea
-
-*.7z
-*.sfs
+data
+seeds.json
