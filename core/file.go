@@ -4,6 +4,8 @@ import (
 	"io"
 	"os"
 
+	"encoding/hex"
+
 	"golang.org/x/crypto/sha3"
 )
 
@@ -41,6 +43,20 @@ func OpenFile(path string) (f *File, err error) {
 		Path: path,
 		Hash: h2[:],
 		Size: fs.Size(),
+	}
+	return
+}
+
+func ParseFile(hexHash, name string) (f *File, err error) {
+	hash := make([]byte, 64)
+	_, err = hex.Decode(hash, []byte(hexHash))
+	if err != nil {
+		return
+	}
+
+	f = &File{
+		Name: name,
+		Hash: hash,
 	}
 	return
 }

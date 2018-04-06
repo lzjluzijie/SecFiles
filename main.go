@@ -48,19 +48,27 @@ func main() {
 func download(ctx *cli.Context) (err error) {
 	bduss := ctx.Args().Get(0)
 	key := []byte(ctx.Args().Get(1))
-	path := ctx.Args().Get(2)
+	hexHash := ctx.Args().Get(2)
 	name := ctx.Args().Get(3)
+
+	f, err := core.ParseFile(hexHash, name)
+	if err != nil {
+		log.Fatalln(err.Error())
+		return
+	}
 
 	b, err := baiduwangpan.NewBaiduWangPan(bduss, key)
 	if err != nil {
 		log.Fatalln(err.Error())
 		return
 	}
-	err = b.Get(path, name)
+
+	err = b.Get(f)
 	if err != nil {
 		log.Fatalln(err.Error())
 		return
 	}
+
 	return
 }
 

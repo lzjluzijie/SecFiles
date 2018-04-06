@@ -131,7 +131,10 @@ func (b *BaiduWangPan) Put(f *core.File) (err error) {
 	return
 }
 
-func (b *BaiduWangPan) Get(path, name string) (err error) {
+func (b *BaiduWangPan) Get(f *core.File) (err error) {
+	path := fmt.Sprintf("/secfiles/%x.sfs", f.Hash)
+	name := fmt.Sprintf("%x.sfs", f.Hash)
+
 	//Get size
 	u := fmt.Sprintf("%s?app_id=%s&method=meta&path=%s", pcsFileURL, b.app_id, path)
 	req, err := http.NewRequest("GET", u, nil)
@@ -201,9 +204,6 @@ func (b *BaiduWangPan) Get(path, name string) (err error) {
 				}
 
 				data, err := ioutil.ReadAll(resp.Body)
-				if len(data) == 65 {
-					log.Println(string(data))
-				}
 
 				if err != nil {
 					finishChan <- finish{
@@ -232,6 +232,7 @@ func (b *BaiduWangPan) Get(path, name string) (err error) {
 		}()
 	}
 
+	//Waiting download
 	for finished := int64(0); finished*blocksize < size; {
 		f := <-finishChan
 		if f.err != nil {
@@ -240,6 +241,54 @@ func (b *BaiduWangPan) Get(path, name string) (err error) {
 		}
 		log.Printf("ID%d finished", f.id)
 		finished++
+	}
+
+	//Download finished, start decrypt
+	log.Printf("Download %s finished, begin to decrypt", name)
+	b.Decrypt(name, f.Name)
+	log.Println("Finish")
+	return
+}
+
+func (b *BaiduWangPan) Decrypt(in, out string) (err error) {
+	inFile, err := os.Open(in)
+	if err != nil {
+		log.Fatalln(err.Error())
+		return
+	}
+	defer inFile.Close()
+
+	block, err := aes.NewCipher(b.key)
+	if err != nil {
+		log.Fatalln(err.Error())
+		return
+	}
+
+	iv := make([]byte, 16)
+	_, err = inFile.Read(iv)
+	if err != nil {
+		log.Fatalln(err.Error())
+		return
+	}
+
+	stream := cipher.NewOFB(block, iv)
+
+	outFile, err := os.OpenFile(out, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	if err != nil {
+		log.Fatalln(err.Error())
+		return
+	}
+
+	defer outFile.Close()
+
+	reader := &cipher.StreamReader{
+		S: stream,
+		R: inFile,
+	}
+
+	if _, err := io.Copy(outFile, reader); err != nil {
+		log.Fatalln(err.Error())
+		return err
 	}
 
 	return
