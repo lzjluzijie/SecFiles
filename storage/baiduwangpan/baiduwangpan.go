@@ -1,12 +1,9 @@
 package baiduwangpan
 
 import (
-	"bytes"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
-	"mime/multipart"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -14,6 +11,7 @@ import (
 	"time"
 
 	"github.com/bitly/go-simplejson"
+	"github.com/iikira/BaiduPCS-Go/requester/multipartreader"
 	"github.com/lzjluzijie/secfiles/core"
 )
 
@@ -53,36 +51,41 @@ type finish struct {
 var pcsFileURL = "https://pcs.baidu.com/rest/2.0/pcs/file"
 
 func (b *BaiduWangPan) Put(f *core.File) (err error) {
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-	part, err := writer.CreateFormFile("file", f.Path)
-	if err != nil {
-		return
-	}
-
 	file, err := os.Open(f.Path)
 	if err != nil {
 		return
 	}
 
-	_, err = io.Copy(part, file)
+	r := multipartreader.NewFileReadedLen64(file)
+	mr := multipartreader.NewMultipartReader()
+	mr.AddFormFile("file", f.Name, r)
 
-	err = writer.Close()
+	req, err := http.NewRequest("POST", pcsFileURL, mr)
 	if err != nil {
 		return
 	}
-
-	req, err := http.NewRequest("POST", pcsFileURL, body)
-	if err != nil {
-		return
-	}
-	req.Header.Set("Content-Type", writer.FormDataContentType())
+	mr.SetupHTTPRequest(req)
 	v := req.URL.Query()
 	v.Add("app_id", b.app_id)
 	v.Add("method", "upload")
-	v.Add("path", "/"+f.Name)
+	v.Add("path", "/secfiles/"+f.Name)
 	v.Add("ondup", "newcopy")
 	req.URL.RawQuery = v.Encode()
+
+	go func() {
+		t := time.Now()
+		for {
+			time.Sleep(time.Second)
+			readed := mr.Readed()
+			if readed == f.Size{
+				return
+			}
+
+			readed = readed/1024
+
+			log.Printf("%s uploaded:%dKB, speed:%dKBps", f.Name, readed, readed/int64(time.Since(t).Seconds()))
+		}
+	}()
 
 	resp, err := b.Do(req)
 	if err != nil {
