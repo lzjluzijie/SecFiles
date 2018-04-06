@@ -10,6 +10,13 @@ import (
 	"os"
 	"time"
 
+	"bytes"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"io"
+	"strings"
+
 	"github.com/bitly/go-simplejson"
 	"github.com/lzjluzijie/secfiles/core"
 )
@@ -31,6 +38,7 @@ var panURL = &url.URL{
 type BaiduWangPan struct {
 	*http.Client
 
+	key    []byte
 	bduss  string
 	app_id string
 }
@@ -55,8 +63,29 @@ func (b *BaiduWangPan) Put(f *core.File) (err error) {
 		return
 	}
 
+	//Encrypt file
+	block, err := aes.NewCipher(b.key)
+	if err != nil {
+		return
+	}
+
+	iv := make([]byte, 16)
+	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
+		return err
+	}
+
+	stream := cipher.NewOFB(block, iv)
+	reader := &cipher.StreamReader{
+		S: stream,
+		R: file,
+	}
+
+	//Ready to upload
 	mr := core.NewMultipartReader()
-	mr.AddFile(file)
+	form := fmt.Sprintf("--%s\r\nContent-Disposition: form-data; name=\"%s\"; filename=\"%s\"\r\n\r\n", mr.Boundary, "file", fmt.Sprintf("%x.sfs", f.Hash))
+	mr.AddReader(strings.NewReader(form), int64(len(form)))
+	mr.AddReader(bytes.NewReader(iv), 16)
+	mr.AddReader(reader, f.Size)
 
 	req, err := http.NewRequest("POST", pcsFileURL, mr)
 	if err != nil {
@@ -66,7 +95,7 @@ func (b *BaiduWangPan) Put(f *core.File) (err error) {
 	v := req.URL.Query()
 	v.Add("app_id", b.app_id)
 	v.Add("method", "upload")
-	v.Add("path", "/secfiles/"+f.Name)
+	v.Add("path", "/secfiles/"+fmt.Sprintf("%x.sfs", f.Hash))
 	v.Add("ondup", "newcopy")
 	req.URL.RawQuery = v.Encode()
 
@@ -216,7 +245,7 @@ func (b *BaiduWangPan) Get(path, name string) (err error) {
 	return
 }
 
-func NewBaiduWangPan(bduss string) (b *BaiduWangPan, err error) {
+func NewBaiduWangPan(bduss string, key []byte) (b *BaiduWangPan, err error) {
 	cookie := &http.Cookie{
 		Name:  "BDUSS",
 		Value: bduss,
@@ -241,6 +270,7 @@ func NewBaiduWangPan(bduss string) (b *BaiduWangPan, err error) {
 		},
 		app_id: app_id,
 		bduss:  bduss,
+		key:    key,
 	}
 	return
 }

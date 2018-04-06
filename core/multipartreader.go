@@ -20,7 +20,7 @@ Apache License 2.0
 
 type MultipartReader struct {
 	contentType string
-	boundary    string
+	Boundary    string
 
 	readers     []io.Reader
 	length      int64
@@ -40,7 +40,7 @@ func NewMultipartReader() (mr *MultipartReader) {
 
 	mr = &MultipartReader{
 		contentType: writer.FormDataContentType(),
-		boundary:    writer.Boundary(),
+		Boundary:    writer.Boundary(),
 		readers:     []io.Reader{bodyReader, closeReader},
 		length:      int64(len(formBody) + len(formClose)),
 	}
@@ -59,7 +59,7 @@ func (mr *MultipartReader) AddFile(file *os.File) (err error) {
 		return
 	}
 
-	form := fmt.Sprintf("--%s\r\nContent-Disposition: form-data; name=\"%s\"; filename=\"%s\"\r\n\r\n", mr.boundary, "file", fs.Name())
+	form := fmt.Sprintf("--%s\r\nContent-Disposition: form-data; name=\"%s\"; filename=\"%s\"\r\n\r\n", mr.Boundary, "file", fs.Name())
 	mr.AddReader(strings.NewReader(form), int64(len(form)))
 	mr.AddReader(file, fs.Size())
 	return
