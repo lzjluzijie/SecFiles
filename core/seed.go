@@ -6,7 +6,6 @@ import (
 
 	"errors"
 	"fmt"
-	"io/ioutil"
 
 	"github.com/lzjluzijie/base36"
 	"golang.org/x/crypto/sha3"
@@ -62,38 +61,9 @@ func ParseSeed(b36hash, name string) (f *Seed, err error) {
 	}
 
 	f = &Seed{
-		Name: name,
-		Hash: hash,
-		B36Hash:b36hash,
+		Name:    name,
+		Hash:    hash,
+		B36Hash: b36hash,
 	}
-	return
-}
-
-func GetSeeds(p string) (seeds []*Seed, err error) {
-	files, err := ioutil.ReadDir(p)
-	if err != nil {
-		return
-	}
-
-	for _, fi := range files {
-		if fi.IsDir() {
-			ss, err := GetSeeds(p + string(os.PathSeparator) + fi.Name())
-			if err != nil {
-				return seeds, err
-			}
-
-			seeds = append(seeds, ss...)
-			continue
-		}
-
-		s, err := OpenSeed(p + string(os.PathSeparator) + fi.Name())
-		if err != nil {
-			return seeds, err
-		}
-
-		seeds = append(seeds, s)
-		continue
-	}
-
 	return
 }

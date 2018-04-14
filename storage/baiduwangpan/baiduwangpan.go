@@ -137,7 +137,7 @@ func (b *BaiduWangPan) Get(s *core.Seed) (err error) {
 
 	//Get size
 	size, err := b.GetSize(path)
-	if err!=nil{
+	if err != nil {
 		return err
 	}
 	log.Printf("%s size: %d", name, size)
@@ -235,7 +235,7 @@ func (b *BaiduWangPan) Get(s *core.Seed) (err error) {
 	return
 }
 
-func (b *BaiduWangPan) GetSize(path string)(size int64, err error){
+func (b *BaiduWangPan) GetSize(path string) (size int64, err error) {
 	u := fmt.Sprintf("%s?app_id=%s&method=meta&path=%s", pcsFileURL, b.app_id, path)
 	req, err := http.NewRequest("GET", u, nil)
 	if err != nil {

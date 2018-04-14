@@ -106,18 +106,22 @@ func add(ctx *cli.Context) (err error) {
 				continue
 			}
 
-			seedS.Seeds = append(seedS.Seeds, s)
+			seedS.AddSeed(s)
+			if err != nil {
+				log.Fatalln(err.Error())
+				continue
+			}
 			continue
 		}
 
-		seeds, err := core.GetSeeds(wd + string(os.PathSeparator) + fi.Name())
+		err = seedS.AddSeeds(wd + string(os.PathSeparator) + fi.Name())
 		if err != nil {
 			log.Fatalln(err.Error())
 			continue
 		}
-
-		seedS.Seeds = append(seedS.Seeds, seeds...)
 	}
+
+	seedS.UpdatedAt = time.Now()
 
 	data, err = json.MarshalIndent(seedS, "", "    ")
 	if err != nil {
