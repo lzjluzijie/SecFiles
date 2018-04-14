@@ -51,12 +51,13 @@ func Add(ctx *cli.Context) (err error) {
 		}
 
 		//Is file
-		log.Printf("Add file %s", fi.Name())
 		s, err := core.OpenSeed(p)
 		if err != nil {
 			log.Fatalln(err.Error())
 			continue
 		}
+
+		log.Printf("Add file %s", s.Path)
 
 		err = seedS.AddSeed(s)
 		if err != nil {
@@ -64,7 +65,7 @@ func Add(ctx *cli.Context) (err error) {
 			continue
 		}
 
-		log.Printf("Added %s", s.Name)
+		log.Printf("Added file %s", s.Name)
 		continue
 	}
 

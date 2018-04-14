@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 
+	"strings"
+
 	"github.com/lzjluzijie/base36"
 	"golang.org/x/crypto/sha3"
 )
@@ -30,6 +32,10 @@ func OpenSeed(path string) (s *Seed, err error) {
 		return
 	}
 
+	wd, err := os.Getwd()
+	p := strings.Split(path, wd+"\\")
+	relPath := strings.Replace(p[1], "\\", "/", -1)
+
 	h := sha3.New512()
 	_, err = io.Copy(h, file)
 	if err != nil {
@@ -45,7 +51,7 @@ func OpenSeed(path string) (s *Seed, err error) {
 
 	s = &Seed{
 		Name:    fs.Name(),
-		Path:    path,
+		Path:    relPath,
 		Size:    fs.Size(),
 		Hash:    h2[:],
 		B36Hash: b36hash,

@@ -50,11 +50,12 @@ func (seedS *SeedS) AddSeeds(p string) (err error) {
 			continue
 		}
 
-		log.Printf("Add file %s", fi.Name())
 		s, err := OpenSeed(p + string(os.PathSeparator) + fi.Name())
 		if err != nil {
 			return err
 		}
+
+		log.Printf("Add file %s", s.Path)
 
 		err = seedS.AddSeed(s)
 		if err != nil {
