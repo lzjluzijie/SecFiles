@@ -1,6 +1,8 @@
 package core
 
 import (
+	"errors"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
@@ -20,15 +22,15 @@ type SeedS struct {
 	UpdatedAt time.Time
 }
 
-func (seedS *SeedS) AddSeed(seed *Seed) {
+func (seedS *SeedS) AddSeed(seed *Seed) error {
 	for _, s := range seedS.Seeds {
 		if s.B36Hash == seed.B36Hash {
-			log.Printf("%s already exist", seed.Name)
+			return errors.New(fmt.Sprintf("%s has been already added", seed.Name))
 		}
 	}
 
 	seedS.Seeds = append(seedS.Seeds, seed)
-	return
+	return nil
 }
 
 func (seedS *SeedS) AddSeeds(p string) (err error) {
@@ -39,19 +41,28 @@ func (seedS *SeedS) AddSeeds(p string) (err error) {
 
 	for _, fi := range files {
 		if fi.IsDir() {
+			log.Printf("Add dir %s", fi.Name())
 			err := seedS.AddSeeds(p + string(os.PathSeparator) + fi.Name())
 			if err != nil {
 				return err
 			}
+			log.Printf("Added dir %s", fi.Name())
 			continue
 		}
 
+		log.Printf("Add file %s", fi.Name())
 		s, err := OpenSeed(p + string(os.PathSeparator) + fi.Name())
 		if err != nil {
 			return err
 		}
 
-		seedS.AddSeed(s)
+		err = seedS.AddSeed(s)
+		if err != nil {
+			log.Println(err.Error())
+			continue
+		}
+
+		log.Printf("Added %s", s.Name)
 		continue
 	}
 

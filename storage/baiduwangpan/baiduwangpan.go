@@ -21,6 +21,8 @@ import (
 	"github.com/lzjluzijie/secfiles/core"
 )
 
+var App_id = "260149"
+
 var blocksize = int64(1024 * 1024)
 
 var pcsURL = &url.URL{
